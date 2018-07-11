@@ -41,12 +41,14 @@ class Comment {
 class Hunk {
     has $.original;
     has $.term;
+
+    method Str() { $!original }
 }
 
 class File {
-    has Hunk @.hunks;
-    method fields() { @!hunks.grep({ .term ~~ Field })».term }
-    multi method Str { [~] @!hunks».original }
+    has $.hunks;
+    method fields() { $!hunks.grep({ .term ~~ Field })».term }
+    multi method Str { [~] $!hunks».original }
 }
 
 class Actions {
@@ -81,10 +83,29 @@ class Actions {
     method integer($/) { make "$/".Int }
     method fractional($/) { make "$/".Rat }
     method string($/) { make [~] $<chars>.map({ $_ eq '""' ?? '"' !! $_ }) }
+    method special($/) { make "$/" }
 }
 
-multi method parse(IO $thing) { self.parse($thing.slurp) }
-multi method parse(Str() $thing) {
-    Parser.parse($thing, actions => Actions.new).made
-        // die "Cannot parse GCode";
+method parse($thing) {
+    my $buf = '';
+    my $hunks = gather {
+        for $thing.lines(:!chomp) -> $line {
+            $buf ~= $line;
+
+            my $made := Parser.parse($buf, actions => Actions.new, rule => 'gcodes').made;
+            if $made {
+                .take for @$made;
+                $buf = '';
+            }
+        }
+
+        if $buf {
+            my $made := Parser.parse($buf, actions => Actions.new, rule => 'gcodes').made;
+            if $made {
+                .take for @$made;
+            }
+        }
+    }
+
+    File.new(:$hunks);
 }
